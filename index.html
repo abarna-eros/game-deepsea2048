@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Deep Sea</title>
+<!-- Modern gaming + UI fonts: Orbitron (headings), Inter (body) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Orbitron:wght@600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<style>
+/* Minimal shell — same spirit as knife_hit: black canvas, flex center, no chrome */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;touch-action:none}
+body{
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:100vh;
+  font-family:Inter,system-ui,sans-serif;
+  color:#e0f2fe;
+}
+/* Centered 9:16 frame; Phaser FIT + DOM START overlay */
+.gp-stage{
+  position:relative;
+  width:min(calc(100vw - 12px), calc((100dvh - 12px) * 9 / 16));
+  max-width:600px;
+  aspect-ratio:9 / 16;
+  border-radius:12px;
+  overflow:visible;
+  box-shadow:0 0 0 1px rgba(56,189,248,0.12),0 20px 50px rgba(0,0,0,0.65);
+}
+#game-canvas-host{
+  position:absolute;
+  inset:0;
+  border-radius:12px;
+  overflow:hidden;
+}
+#game-canvas-host canvas{display:block;width:100%!important;height:100%!important}
+/* Real HTML start control — flat neon shell to match menu title / hero panel (not glossy 3D) */
+.gp-start-btn{
+  position:absolute;
+  z-index:10;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  width:min(88%, 400px);
+  max-width:400px;
+  min-height:58px;
+  padding:0.85rem 1.5rem;
+  box-sizing:border-box;
+  border:2px solid rgba(56,189,248,0.55);
+  border-radius:22px;
+  cursor:pointer;
+  font-family:Orbitron,system-ui,sans-serif;
+  font-weight:800;
+  font-size:clamp(1rem, 3.6vw, 1.28rem);
+  letter-spacing:0.18em;
+  background:linear-gradient(165deg,rgba(15,23,42,0.96) 0%,rgba(8,47,73,0.72) 48%,rgba(12,74,110,0.45) 100%);
+  box-shadow:
+    0 0 0 1px rgba(14,116,144,0.35) inset,
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 0 32px rgba(34,211,238,0.22),
+    0 12px 28px rgba(0,0,0,0.4);
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transition:opacity .22s ease, transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.gp-start-btn__label{
+  display:block;
+  background:linear-gradient(180deg,#f0f9ff 0%,#67e8f9 38%,#22d3ee 72%,#0e7490 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  filter:drop-shadow(0 2px 8px rgba(8,145,178,0.45));
+}
+.gp-start-btn--show{
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+}
+.gp-start-btn:hover:not(:disabled){
+  border-color:rgba(103,232,249,0.85);
+  box-shadow:
+    0 0 0 1px rgba(94,234,212,0.2) inset,
+    0 1px 0 rgba(255,255,255,0.1) inset,
+    0 0 40px rgba(34,211,238,0.35),
+    0 14px 32px rgba(0,0,0,0.42);
+  transform:translate(-50%,-50%) scale(1.02);
+}
+.gp-start-btn:active:not(:disabled){
+  transform:translate(-50%,-50%) scale(0.98);
+  border-color:rgba(56,189,248,0.75);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.35) inset,
+    0 0 24px rgba(34,211,238,0.2),
+    0 6px 16px rgba(0,0,0,0.45);
+}
+.gp-start-btn:focus-visible{
+  outline:3px solid rgba(94,234,212,0.95);
+  outline-offset:4px;
+}
+.gp-start-btn:disabled{
+  cursor:not-allowed;
+  border-color:rgba(71,85,105,0.5);
+  background:linear-gradient(165deg,rgba(15,23,42,0.85) 0%,rgba(30,41,59,0.75) 100%);
+  box-shadow:0 0 0 1px rgba(0,0,0,0.25) inset,0 6px 16px rgba(0,0,0,0.35);
+  transform:translate(-50%,-50%);
+}
+.gp-start-btn:disabled .gp-start-btn__label{
+  background:linear-gradient(180deg,#94a3b8 0%,#64748b 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  filter:none;
+}
+/* Pause: blur game canvas only (immersive overlay) */
+#game-canvas-host.gp-blur canvas{
+  filter:blur(10px) saturate(0.85);
+  transition:filter 0.35s ease;
+}
+@media (min-width:900px){
+  .gp-stage{max-width:520px}
+}
+</style>
+</head>
+<body>
+<div id="err" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#450a0a;color:#fecaca;font-size:13px;padding:10px;display:none;white-space:pre-wrap;max-height:40vh;overflow:auto;font-family:ui-monospace,monospace"></div>
+<div class="gp-stage">
+  <div id="game-canvas-host" aria-label="Game canvas"></div>
+  <button type="button" id="gp-start-btn" class="gp-start-btn" hidden aria-hidden="true"><span class="gp-start-btn__label">START</span></button>
+</div>
+<script>
+window.onerror = function (msg, url, line, col, err) {
+  const el = document.getElementById('err');
+  if (!el) return false;
+  el.style.display = 'block';
+  el.textContent += 'ERROR: ' + msg + '\nLine:' + line + ' Col:' + col + '\n' + (err && err.stack ? err.stack : '') + '\n---\n';
+  return false;
+};
+
+// ═══════════════════════════════════════════════════════
+// Deep Sea — Production UI layer
+// Orbitron + Inter · modular Phaser UI · responsive shell
+// ═══════════════════════════════════════════════════════
+
+const GW = 720, GH = 1280;
+/** Phaser-space Y center for the HTML START control — gap between BEST row and bottom tips. */
+const MENU_DOM_START_Y = 650;
+
+// ── DESIGN TOKENS (hex strings for DOM / canvas2d; 0x for Phaser.Graphics) ──
+const Theme = {
+  fontDisplay: '"Orbitron", "Segoe UI", sans-serif',
+  fontUI:      '"Inter", "Segoe UI", sans-serif',
+  hex: {
+    abyss: '#020617',
+    surface: '#0f172a',
+    panel: '#082f49',
+    cyan: '#22d3ee',
+    cyanDeep: '#0891b2',
+    mint: '#34d399',
+    mintDeep: '#059669',
+    rose: '#fb7185',
+    foam: '#f0f9ff',
+    muted: '#94a3b8',
+    glow: 'rgba(56,189,248,0.45)',
+  },
+};
+
+const C = {
+  bg:       0x020617,
+  surface:  0x0f172a,
+  board:    0x051b2d,
+  cell:     0x0c2744,
+  border:   0x164e71,
+  borderLt: 0x1e5f8a,
+  primary:  0x22d3ee,
+  primaryD: 0x0891b2,
+  accent:   0x34d399,
+  accentD:  0x059669,
+  gold:     0x38bdf8,
+  success:  0x34d399,
+  danger:   0xfb7185,
+  text:     0xf0f9ff,
+  subtext:  0x94a3b8,
+};
+
+const TILE_COLORS = {
+  2:    { bg: 0x0c4a6e, text: '#bae6fd' },
+  4:    { bg: 0x0369a1, text: '#e0f2fe' },
+  8:    { bg: 0x0ea5e9, text: '#020617' },
+  16:   { bg: 0x06b6d4, text: '#020617' },
+  32:   { bg: 0x14b8a6, text: '#020617' },
+  64:   { bg: 0x34d399, text: '#020617' },
+  128:  { bg: 0x38bdf8, text: '#020617' },
+  256:  { bg: 0x818cf8, text: '#ffffff' },
+  512:  { bg: 0xa78bfa, text: '#ffffff' },
+  1024: { bg: 0xc084fc, text: '#ffffff' },
+  2048: { bg: 0xf0abfc, text: '#020617' },
+  4096: { bg: 0xfbbf24, text: '#020617' },
+  8192: { bg: 0xfb923c, text: '#020617' },
+};
+
+function tileColor(val) {
+  return TILE_COLORS[val] || { bg: 0x071c2e, text: '#e0f2fe' };
+}
+
+// ═══ Phaser UI helpers: gradients via lightweight canvas textures (no heavy DOM) ═══
+function makeLinearGradientTexture(scene, key, w, h, colorStops) {
+  if (scene.textures.exists(key)) return;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(w); c.height = Math.ceil(h);
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  colorStops.forEach((t, i) => g.addColorStop(i / (colorStops.length - 1), t));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  scene.textures.addCanvas(key, c);
+}
+
+// ═══ Reusable Phaser UI components (containers + clean update methods) ═══
+class StyledButton extends Phaser.GameObjects.Container {
+  /**
+   * Gradient-style button using a pre-made texture strip + shine overlay.
+   * Hover: scale + outer glow; Active: press-in (gamepad-quality feedback).
+   * Uses an explicit hit rect + press tracking so touch/mouse releases behave reliably.
+   */
+  constructor(scene, x, y, w, h, textureKey, label, textStyle, onRelease) {
+    super(scene, x, y);
+    this._w = w; this._h = h; this._cb = onRelease;
+    this._baseScale = 1;
+    this._pressed = false;
+
+    const rr = Math.min(22, h * 0.28);
+    this.plate = scene.add.graphics();
+    this.plate.fillStyle(0x0e7490, 1);
+    this.plate.fillRoundedRect(-w / 2, -h / 2, w, h, rr);
+    this.plate.lineStyle(2, 0xa5f3fc, 0.95);
+    this.plate.strokeRoundedRect(-w / 2, -h / 2, w, h, rr);
+
+    this.bg = scene.add.image(0, 0, textureKey).setDisplaySize(w, h);
+    this.shine = scene.add.graphics();
+    this._drawShine(w, h);
+
+    this.txt = scene.add.text(0, 0, label, textStyle).setOrigin(0.5);
+
+    this.add([this.plate, this.bg, this.shine, this.txt]);
+    const hit = new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h);
+    this.setInteractive({
+      hitArea: hit,
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+
+    this.on('pointerover', () => {
+      if (this._pressed) return;
+      scene.tweens.add({
+        targets: this,
+        scale: 1.06,
+        duration: 120,
+        ease: 'Cubic.easeOut',
+      });
+      this.bg.setTint(0xffffff);
+    });
+    this.on('pointerout', () => {
+      if (this._pressed) return;
+      scene.tweens.add({ targets: this, scale: 1, duration: 140, ease: 'Cubic.easeOut' });
+      this.bg.clearTint();
+    });
+    this.on('pointerdown', () => {
+      this._pressed = true;
+      scene.tweens.add({ targets: this, scale: 0.94, duration: 70, ease: 'Cubic.easeInOut' });
+      Sfx.tap();
+    });
+    this.on('pointerup', () => {
+      if (!this._pressed) return;
+      this._pressed = false;
+      scene.tweens.add({ targets: this, scale: 1.02, duration: 90, yoyo: true, ease: 'Quad.easeOut' });
+      this.bg.clearTint();
+      if (this._cb) this._cb();
+    });
+    this.on('pointerupoutside', () => {
+      if (!this._pressed) return;
+      this._pressed = false;
+      scene.tweens.killTweensOf(this);
+      this.setScale(1);
+      this.bg.clearTint();
+    });
+  }
+
+  _drawShine(w, h) {
+    const r = Math.min(18, h * 0.25);
+    this.shine.clear();
+    this.shine.fillStyle(0xffffff, 0.12);
+    this.shine.fillRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, h * 0.42, { tl: r, tr: r, bl: 0, br: 0 });
+  }
+
+  setLabel(t) { this.txt.setText(t); }
+}
+
+class AnimatedScore extends Phaser.GameObjects.Container {
+  /** Smooth count-up / tween toward target score (arcade HUD feel). */
+  constructor(scene, x, y, label, styleLabel, styleValue) {
+    super(scene, x, y);
+    this.displayed = 0;
+    this.target = 0;
+    this.label = scene.add.text(0, -22, label, styleLabel).setOrigin(0.5, 0.5);
+    this.value = scene.add.text(0, 10, '0', styleValue).setOrigin(0.5, 0.5);
+    this.add([this.label, this.value]);
+    this.tween = null;
+  }
+
+  setTarget(n, pop = false) {
+    this.target = n;
+    if (this.tween) {
+      this.scene.tweens.remove(this.tween);
+      this.tween = null;
+    }
+    this.tween = this.scene.tweens.addCounter({
+      from: this.displayed,
+      to: n,
+      duration: Math.min(450, 40 + Math.abs(n - this.displayed) * 4),
+      ease: 'Cubic.easeOut',
+      onUpdate: (tw) => {
+        this.displayed = Math.round(tw.getValue());
+        this.value.setText(`${this.displayed}`);
+      },
+      onComplete: () => {
+        this.displayed = n;
+        this.value.setText(`${n}`);
+        this.tween = null;
+      },
+    });
+    if (pop) {
+      this.scene.tweens.add({
+        targets: this.value,
+        scale: 1.12,
+        duration: 90,
+        yoyo: true,
+        ease: 'Quad.easeOut',
+      });
+    }
+  }
+
+  snap(n) {
+    this.displayed = n;
+    this.target = n;
+    this.value.setText(`${n}`);
+  }
+}
+
+class CircularSessionTimer extends Phaser.GameObjects.Container {
+  /** Decorative + readable session clock; ring grows slowly (ambient, not fail-state). */
+  constructor(scene, x, y, radius) {
+    super(scene, x, y);
+    this.r = radius;
+    this.glow = scene.add.graphics();
+    this.track = scene.add.graphics();
+    this.arc = scene.add.graphics();
+    this.text = scene.add.text(0, 0, '0:00', {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '22px',
+      color: Theme.hex.foam,
+      fontStyle: '700',
+    }).setOrigin(0.5);
+    this.sub = scene.add.text(0, radius * 0.62, 'TIME', {
+      fontFamily: Theme.fontUI,
+      fontSize: '11px',
+      color: '#7dd3fc',
+      fontStyle: '700',
+    }).setOrigin(0.5);
+    this.add([this.glow, this.track, this.arc, this.text, this.sub]);
+    this.start = scene.time.now;
+    this._pulse = scene.tweens.add({
+      targets: this,
+      scale: 1.03,
+      duration: 1400,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  updateFromTime(now) {
+    const sec = Math.floor((now - this.start) / 1000);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    this.text.setText(`${m}:${s.toString().padStart(2, '0')}`);
+    // Ring progress: 60s = full loop (repeating visual rhythm)
+    const p = (sec % 60) / 60;
+    this._drawRing(p);
+  }
+
+  _drawRing(progress) {
+    const r = this.r;
+    this.glow.clear();
+    this.glow.lineStyle(10, C.primary, 0.08);
+    this.glow.strokeCircle(0, 0, r + 2);
+
+    this.track.clear();
+    this.track.lineStyle(7, C.border, 0.55);
+    this.track.beginPath();
+    this.track.arc(0, 0, r, 0, Math.PI * 2, false);
+    this.track.strokePath();
+
+    this.arc.clear();
+    this.arc.lineStyle(7, C.accent, 0.95);
+    this.arc.beginPath();
+    this.arc.arc(0, 0, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress, false);
+    this.arc.strokePath();
+  }
+}
+
+class DepthMeter extends Phaser.GameObjects.Container {
+  /**
+   * "Hull integrity / depth pressure" style bar: maps highest tile toward 2048.
+   * Color shifts cyan → mint → gold as you approach the surface (win tile).
+   */
+  constructor(scene, x, y, width, height) {
+    super(scene, x, y);
+    this._displayP = 0;
+    this.w = width; this.h = height;
+    this.back = scene.add.graphics();
+    this.fill = scene.add.graphics();
+    this.shine = scene.add.graphics();
+    this.icon = scene.add.text(-width / 2 + 18, 0, '◇', {
+      fontSize: '20px',
+      color: '#67e8f9',
+    }).setOrigin(0.5);
+    this.label = scene.add.text(0, -height / 2 - 28, 'ASCENT', {
+      fontFamily: Theme.fontUI,
+      fontSize: '12px',
+      color: '#7dd3fc',
+      fontStyle: '700',
+    }).setOrigin(0.5, 1);
+    this.add([this.back, this.fill, this.shine, this.icon, this.label]);
+    this.progress = 0;
+    this._redraw();
+  }
+
+  setProgress01(p, sceneRef) {
+    this.progress = Phaser.Math.Clamp(p, 0, 1);
+    if (this._tween) this._tween.remove();
+    this._tween = sceneRef.tweens.add({
+      targets: this,
+      _displayP: this.progress,
+      duration: 280,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => this._redraw(),
+      onComplete: () => { this._displayP = this.progress; this._redraw(); },
+    });
+  }
+
+  _redraw() {
+    const w = this.w, h = this.h, p = this._displayP;
+    const fillW = Math.max(8, (w - 16) * p);
+    this.back.clear();
+    this.back.fillStyle(C.surface, 1);
+    this.back.fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+    this.back.lineStyle(1, C.border, 0.6);
+    this.back.strokeRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+
+    const r = Math.round(Phaser.Math.Linear(34, 251, p));
+    const g = Math.round(Phaser.Math.Linear(211, 191, p));
+    const b = Math.round(Phaser.Math.Linear(238, 36, p));
+    const hx = Phaser.Display.Color.GetColor(r, g, b);
+
+    this.fill.clear();
+    this.fill.fillStyle(hx, 1);
+    this.fill.fillRoundedRect(-w / 2 + 4, -h / 2 + 4, fillW, h - 8, (h - 8) / 2);
+
+    this.shine.clear();
+    this.shine.fillStyle(0xffffff, 0.14);
+    this.shine.fillRoundedRect(-w / 2 + 6, -h / 2 + 5, Math.max(0, fillW - 12), (h - 10) * 0.35, 6);
+  }
+}
+
+const Sfx = {
+  ctx: null, muted: false,
+  init(){ try{ this.ctx = new(window.AudioContext||window.webkitAudioContext)(); }catch(e){} },
+  _p(freq, dur, type='sine', vol=0.22){
+    if(this.muted || !this.ctx) return;
+    try{
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.connect(g); g.connect(this.ctx.destination);
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, this.ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+      o.start(); o.stop(this.ctx.currentTime + dur);
+    }catch(e){}
+  },
+  tap()     { this._p(800, 0.04, 'sine', 0.14); },
+  slide()   { this._p(280, 0.08, 'sine', 0.16); },
+  merge()   { this._p(440, 0.15, 'sine', 0.18); setTimeout(()=> this._p(660, 0.12, 'sine', 0.14), 60); },
+  invalid() { this._p(140, 0.1, 'triangle', 0.10); },
+  undo()    { this._p(500, 0.06, 'sine', 0.14); setTimeout(()=> this._p(380, 0.07, 'sine', 0.12), 60); },
+  victory() { [392,523,659,784,1047].forEach((f,i)=> setTimeout(()=>this._p(f,0.35,'sine',0.16), i*130)); },
+  gameOver(){ this._p(260, 0.25, 'triangle', 0.14); setTimeout(()=>this._p(180, 0.35, 'triangle', 0.10), 220); },
+  bubble()  { this._p(Phaser.Math.Between(900,1400), 0.04, 'sine', 0.06); },
+};
+
+const Save = {
+  KEY: '2048_deepsea_v2_ui',
+  data: null,
+  load(){
+    try { this.data = JSON.parse(localStorage.getItem(this.KEY)) || JSON.parse(localStorage.getItem('2048_deepsea_v1')) || this.fresh(); }
+    catch(e) { this.data = this.fresh(); }
+  },
+  fresh(){ return { bestScore: 0, sound: true, gamesPlayed: 0 }; },
+  write(){
+    try { localStorage.setItem(this.KEY, JSON.stringify(this.data)); }
+    catch(e) {}
+  },
+};
+
+/** Map Phaser Y into `.gp-stage` pixels (handles Scale.FIT letterboxing inside the canvas). */
+function layoutDomStartButton() {
+  const game = window.game;
+  const btn = document.getElementById('gp-start-btn');
+  const stage = document.querySelector('.gp-stage');
+  const host = document.getElementById('game-canvas-host');
+  if (!btn || !stage || !host) return;
+  const canvas = host.querySelector('canvas');
+  if (!canvas) return;
+  const stageRect = stage.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
+  const gw = game?.scale?.gameSize?.width || GW;
+  const gh = game?.scale?.gameSize?.height || GH;
+  const scale = Math.min(canvasRect.width / gw, canvasRect.height / gh);
+  const drawnH = gh * scale;
+  const offY = (canvasRect.height - drawnH) / 2;
+  const yInCanvas = offY + (MENU_DOM_START_Y / gh) * drawnH;
+  const topPx = canvasRect.top - stageRect.top + yInCanvas;
+  btn.style.top = `${Math.round(topPx)}px`;
+  btn.style.left = '50%';
+  btn.style.transform = 'translate(-50%, -50%)';
+}
+
+/** DOM `<button id="gp-start-btn">` — real CSS control over the canvas (menu only). */
+function setDomStartButtonVisible(show) {
+  const el = document.getElementById('gp-start-btn');
+  if (!el) return;
+  el.classList.toggle('gp-start-btn--show', !!show);
+  if (show) {
+    el.removeAttribute('hidden');
+    el.setAttribute('aria-hidden', 'false');
+    el.disabled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(layoutDomStartButton);
+    });
+  } else {
+    el.setAttribute('hidden', '');
+    el.setAttribute('aria-hidden', 'true');
+    el.disabled = true;
+  }
+}
+
+let _menuDomStartLock = false;
+function tryStartGameFromDomButton() {
+  const g = window.game;
+  if (!g?.scene || _menuDomStartLock) return;
+  const menu = g.scene.getScene('Menu');
+  if (!menu?.scene?.isActive()) return;
+  _menuDomStartLock = true;
+  const btn = document.getElementById('gp-start-btn');
+  if (btn) btn.disabled = true;
+  Sfx.tap();
+  menu.cameras.main.fadeOut(350, 0, 0, 0);
+  menu.cameras.main.once('camerafadeoutcomplete', () => {
+    _menuDomStartLock = false;
+    menu.scene.start('Game');
+  });
+}
+
+const GRID_SIZE = 4;
+
+function emptyGrid() {
+  return Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(0));
+}
+function cloneGrid(g) { return g.map(r => [...r]); }
+
+function emptyCells(grid) {
+  const cells = [];
+  for(let r=0; r<GRID_SIZE; r++)
+    for(let c=0; c<GRID_SIZE; c++)
+      if(grid[r][c] === 0) cells.push({r, c});
+  return cells;
+}
+
+function addRandom(grid) {
+  const free = emptyCells(grid);
+  if(free.length === 0) return false;
+  const cell = free[Math.floor(Math.random() * free.length)];
+  grid[cell.r][cell.c] = Math.random() < 0.9 ? 2 : 4;
+  return cell;
+}
+
+function canMove(grid) {
+  for(let r=0; r<GRID_SIZE; r++)
+    for(let c=0; c<GRID_SIZE; c++){
+      if(grid[r][c] === 0) return true;
+      if(c < GRID_SIZE-1 && grid[r][c] === grid[r][c+1]) return true;
+      if(r < GRID_SIZE-1 && grid[r][c] === grid[r+1][c]) return true;
+    }
+  return false;
+}
+
+function hasWon(grid) {
+  for(let r=0; r<GRID_SIZE; r++)
+    for(let c=0; c<GRID_SIZE; c++)
+      if(grid[r][c] >= 2048) return true;
+  return false;
+}
+
+/**
+ * Same merge / score rules as classic 2048, plus per-tile tracks for slide animation.
+ * `tracks`: { fromIdx, toIdx, val } in line order (before padding); map to board coords in moveGrid.
+ */
+function slideRowTracked(line) {
+  const arr = line.filter(v => v !== 0);
+  const fromIdx = [];
+  for (let j = 0; j < GRID_SIZE; j++) if (line[j] !== 0) fromIdx.push(j);
+  let score = 0;
+  const merges = [];
+  const tracks = [];
+  for (let i = 0; i < arr.length - 1; i++) {
+    if (arr[i] === arr[i + 1]) {
+      const toIdx = i;
+      tracks.push({ fromIdx: fromIdx[i], toIdx, val: arr[i] });
+      tracks.push({ fromIdx: fromIdx[i + 1], toIdx, val: arr[i + 1] });
+      arr[i] *= 2;
+      score += arr[i];
+      merges.push(toIdx);
+      arr.splice(i + 1, 1);
+      fromIdx.splice(i + 1, 1);
+    }
+  }
+  while (arr.length < GRID_SIZE) arr.push(0);
+  const moved = !line.every((v, i) => v === arr[i]);
+  return { row: arr, score, moved, merges, tracks };
+}
+
+function moveGrid(grid, dir) {
+  let score = 0, moved = false;
+  const newGrid = emptyGrid();
+  const mergedCells = [];
+  const tracks = [];
+  for (let i = 0; i < GRID_SIZE; i++) {
+    const line = [];
+    for (let j = 0; j < GRID_SIZE; j++) {
+      switch (dir) {
+        case 'left':  line.push(grid[i][j]); break;
+        case 'right': line.push(grid[i][GRID_SIZE - 1 - j]); break;
+        case 'up':    line.push(grid[j][i]); break;
+        case 'down':  line.push(grid[GRID_SIZE - 1 - j][i]); break;
+      }
+    }
+    const result = slideRowTracked(line);
+    score += result.score;
+    if (result.moved) moved = true;
+    for (const tr of result.tracks) {
+      let sr, sc, er, ec;
+      const { fromIdx, toIdx, val } = tr;
+      switch (dir) {
+        case 'left':
+          sr = i; sc = fromIdx; er = i; ec = toIdx; break;
+        case 'right':
+          sr = i; sc = GRID_SIZE - 1 - fromIdx; er = i; ec = GRID_SIZE - 1 - toIdx; break;
+        case 'up':
+          sr = fromIdx; sc = i; er = toIdx; ec = i; break;
+        case 'down':
+          sr = GRID_SIZE - 1 - fromIdx; sc = i; er = GRID_SIZE - 1 - toIdx; ec = i; break;
+        default: continue;
+      }
+      tracks.push({ sr, sc, er, ec, val });
+    }
+    for (let j = 0; j < GRID_SIZE; j++) {
+      let r, c;
+      switch (dir) {
+        case 'left':  r = i; c = j; break;
+        case 'right': r = i; c = GRID_SIZE - 1 - j; break;
+        case 'up':    r = j; c = i; break;
+        case 'down':  r = GRID_SIZE - 1 - j; c = i; break;
+      }
+      newGrid[r][c] = result.row[j];
+      if (result.merges.includes(j)) mergedCells.push({ r, c });
+    }
+  }
+  return { grid: newGrid, score, moved, mergedCells, tracks };
+}
+
+function spawnBubbles(scene, count=12, depth=1) {
+  for(let i=0; i<count; i++){
+    const size = Phaser.Math.Between(3, 10);
+    const x = Phaser.Math.Between(30, GW-30);
+    const startY = Phaser.Math.Between(GH + 20, GH + 400);
+    const b = scene.add.circle(x, startY, size, 0x67e8f9, Phaser.Math.FloatBetween(0.04, 0.14))
+      .setDepth(depth);
+    scene.tweens.add({
+      targets: b,
+      y: Phaser.Math.Between(-40, -200),
+      x: b.x + Phaser.Math.Between(-60, 60),
+      alpha: 0,
+      duration: Phaser.Math.Between(6000, 14000),
+      delay: Phaser.Math.Between(0, 8000),
+      ease: 'Sine.easeInOut',
+      repeat: -1,
+      onRepeat: () => {
+        b.x = Phaser.Math.Between(30, GW-30);
+        b.y = GH + 20;
+        b.alpha = Phaser.Math.FloatBetween(0.04, 0.14);
+      }
+    });
+  }
+}
+
+function maxTileOnGrid(grid) {
+  let m = 0;
+  for (let r = 0; r < GRID_SIZE; r++)
+    for (let c = 0; c < GRID_SIZE; c++) m = Math.max(m, grid[r][c]);
+  return m;
+}
+
+// ═══ BOOT: textures + gradient atlases for buttons ═══
+class BootScene extends Phaser.Scene {
+  constructor(){ super('Boot'); }
+  create(){
+    Save.load();
+    Sfx.init();
+    Sfx.muted = !Save.data.sound;
+    this._makeStarTextures();
+    // Gradient strips reused by StyledButton (single draw call per button)
+    makeLinearGradientTexture(this, 'grad_btn_primary', 400, 120, ['#22d3ee', '#0891b2', '#0e7490']);
+    makeLinearGradientTexture(this, 'grad_btn_accent', 400, 120, ['#34d399', '#059669', '#047857']);
+    makeLinearGradientTexture(this, 'grad_btn_muted', 400, 120, ['#334155', '#1e293b', '#0f172a']);
+    this.scene.start('Menu');
+  }
+  _makeStarTextures(){
+    const makeStarCanvas = (key, size, fillCol, shadowCol) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const cx = size/2, cy = size/2;
+      const outerR = size/2 - 2, innerR = outerR * 0.42;
+      const pts = 5, step = Math.PI / pts;
+      ctx.fillStyle = shadowCol;
+      ctx.beginPath();
+      for(let i=0;i<pts*2;i++){
+        const R = i%2===0 ? outerR : innerR;
+        const a = i * step - Math.PI/2;
+        i===0 ? ctx.moveTo(cx+R*Math.cos(a), cy+1+R*Math.sin(a))
+               : ctx.lineTo(cx+R*Math.cos(a), cy+1+R*Math.sin(a));
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = fillCol;
+      ctx.beginPath();
+      for(let i=0;i<pts*2;i++){
+        const R = i%2===0 ? outerR : innerR;
+        const a = i * step - Math.PI/2;
+        i===0 ? ctx.moveTo(cx+R*Math.cos(a), cy+R*Math.sin(a))
+               : ctx.lineTo(cx+R*Math.cos(a), cy+R*Math.sin(a));
+      }
+      ctx.closePath(); ctx.fill();
+      this.textures.addCanvas(key, canvas);
+    };
+    makeStarCanvas('starOn', 64, '#38bdf8', '#0284c7');
+    makeStarCanvas('starOff', 64, '#0c2744', '#071c2e');
+  }
+}
+
+class MenuScene extends Phaser.Scene {
+  constructor(){ super('Menu'); }
+  create(){
+    this.cameras.main.fadeIn(500, 0, 0, 0);
+    this.cameras.main.setBackgroundColor(C.bg);
+
+    spawnBubbles(this, 15, 0);
+
+    const heroPanel = this.add.graphics().setDepth(1).setAlpha(0);
+    const px = 24, py = 56, pw = GW - 48, ph = 900;
+    heroPanel.fillStyle(C.surface, 0.52);
+    heroPanel.fillRoundedRect(px, py, pw, ph, 24);
+    heroPanel.lineStyle(1.5, C.border, 0.4);
+    heroPanel.strokeRoundedRect(px, py, pw, ph, 24);
+    heroPanel.fillStyle(C.primary, 0.08);
+    heroPanel.fillRoundedRect(px + 8, py + 8, pw - 16, 108, { tl: 18, tr: 18, bl: 0, br: 0 });
+
+    const causticGfx = this.add.graphics().setAlpha(0.04).setDepth(0);
+    for(let i=0; i<20; i++){
+      const y = Phaser.Math.Between(0, GH);
+      causticGfx.lineStyle(Phaser.Math.Between(1,3), 0x38bdf8, 1);
+      causticGfx.beginPath();
+      causticGfx.moveTo(0, y);
+      for(let x=0; x<=GW; x+=40){
+        causticGfx.lineTo(x, y + Math.sin(x * 0.015 + i) * Phaser.Math.Between(3,12));
+      }
+      causticGfx.strokePath();
+    }
+
+    const cx = GW / 2;
+    const wrap = GW - 72;
+
+    const title = this.add.text(cx, 232, 'Deep Sea', {
+      fontSize: '86px', fontFamily: Theme.fontDisplay,
+      fontStyle: '800', color: '#22d3ee',
+      stroke: '#020617', strokeThickness: 10,
+      letterSpacing: 2,
+    }).setOrigin(0.5).setAlpha(0).setDepth(2);
+
+    const howLabel = this.add.text(cx, 322, 'HOW TO START', {
+      fontSize: '12px', fontFamily: Theme.fontUI,
+      fontStyle: '700', color: '#5eead4', letterSpacing: 8,
+    }).setOrigin(0.5).setAlpha(0).setDepth(2);
+
+    const howBody = this.add.text(cx, 358, 'Press START to open the board. Use arrow keys or swipe to merge tiles and keep ascending.', {
+      fontSize: '17px', fontFamily: Theme.fontUI,
+      fontStyle: '600', color: '#e0f2fe', align: 'center', lineSpacing: 11,
+      wordWrap: { width: wrap },
+    }).setOrigin(0.5).setAlpha(0).setDepth(2);
+
+    const best = this.add.text(cx, 454, `BEST  ${Save.data.bestScore}`, {
+      fontSize: '24px', fontFamily: Theme.fontUI,
+      fontStyle: '700', color: '#7dd3fc',
+    }).setOrigin(0.5).setAlpha(0).setDepth(2);
+
+    this._createSoundToggle(GW - 52, 52);
+
+    const how = this.add.text(cx, 898, 'Swipe to slide tiles.\nMerge matching numbers.\nSurface to win.', {
+      fontSize: '17px', fontFamily: Theme.fontUI,
+      color: '#94a3b8', align: 'center', lineSpacing: 12,
+      wordWrap: { width: wrap },
+    }).setOrigin(0.5).setAlpha(0).setDepth(2);
+
+    this.tweens.add({ targets: heroPanel, alpha: 1, duration: 700, ease: 'Sine.easeOut' });
+    this.tweens.add({ targets: title, alpha: 1, y: { from: 180, to: 232 }, duration: 800, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: howLabel, alpha: 1, duration: 450, delay: 200 });
+    this.tweens.add({ targets: howBody, alpha: 1, duration: 500, delay: 300 });
+    this.tweens.add({ targets: best, alpha: 1, duration: 500, delay: 380 });
+    this.tweens.add({ targets: how, alpha: 1, duration: 550, delay: 500 });
+
+    this.tweens.add({ targets: title, y: '+=6', duration: 2600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    this.time.delayedCall(450, () => setDomStartButtonVisible(true));
+    this.events.once('shutdown', () => setDomStartButtonVisible(false));
+  }
+
+  _createSoundToggle(x, y) {
+    const pad = 14;
+    const cont = this.add.container(x, y).setDepth(4);
+    const g = this.add.graphics();
+    const w = 56, h = 52;
+    g.fillStyle(C.surface, 0.9);
+    g.fillRoundedRect(-w/2, -h/2, w, h, 14);
+    g.lineStyle(1, C.border, 0.5);
+    g.strokeRoundedRect(-w/2, -h/2, w, h, 14);
+    const icon = this.add.text(0, 0, Sfx.muted ? '🔇' : '🔊', { fontSize: '26px' }).setOrigin(0.5);
+    cont.add([g, icon]);
+    const iw = w + pad * 2, ih = h + pad * 2;
+    const hit = new Phaser.Geom.Rectangle(-iw / 2, -ih / 2, iw, ih);
+    cont.setInteractive({
+      hitArea: hit,
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+    let arm = false;
+    cont
+      .on('pointerover', () => {
+        if (!arm) this.tweens.add({ targets: cont, scale: 1.08, duration: 100 });
+      })
+      .on('pointerout', () => {
+        if (!arm) this.tweens.add({ targets: cont, scale: 1, duration: 100 });
+      })
+      .on('pointerdown', () => {
+        arm = true;
+        this.tweens.add({ targets: cont, scale: 0.94, duration: 70, ease: 'Cubic.easeIn' });
+        Sfx.tap();
+      })
+      .on('pointerup', () => {
+        if (!arm) return;
+        arm = false;
+        Sfx.muted = !Sfx.muted;
+        Save.data.sound = !Sfx.muted;
+        Save.write();
+        icon.setText(Sfx.muted ? '🔇' : '🔊');
+        this.tweens.add({ targets: cont, scale: 1.06, duration: 90, yoyo: true, ease: 'Quad.easeOut' });
+      })
+      .on('pointerupoutside', () => {
+        arm = false;
+        this.tweens.killTweensOf(cont);
+        cont.setScale(1);
+      });
+  }
+}
+
+class GameScene extends Phaser.Scene {
+  constructor(){ super('Game'); }
+
+  create(){
+    document.getElementById('game-canvas-host')?.classList.remove('gp-blur');
+    setDomStartButtonVisible(false);
+
+    this.cameras.main.fadeIn(450, 0, 0, 0);
+    this.cameras.main.setBackgroundColor(C.bg);
+
+    this.BOARD_PAD = 12;
+    this.CELL_GAP = 10;
+    this.BOARD_SIZE = 600;
+    this.CELL_SIZE = (this.BOARD_SIZE - this.BOARD_PAD*2 - this.CELL_GAP*(GRID_SIZE-1)) / GRID_SIZE;
+    this.BOARD_X = (GW - this.BOARD_SIZE) / 2;
+    this.BOARD_Y = 360;
+
+    this.grid = emptyGrid();
+    this.score = 0;
+    this.moveCount = 0;
+    this.gameWon = false;
+    this.gameOver = false;
+    this.keepPlaying = false;
+    this.animating = false;
+    this.undoStack = [];
+    this._paused = false;
+
+    addRandom(this.grid);
+    addRandom(this.grid);
+
+    spawnBubbles(this, 8, 1);
+
+    this._drawVignette();
+    this._drawBoard();
+
+    this.tileContainers = {};
+    this._renderAllTiles();
+
+    this._hudRoot = this.add.container(0, 0).setDepth(4);
+    this._buildHUD();
+
+    this._setupInput();
+
+    this.scene.launch('UI', { gameScene: this });
+
+    document.addEventListener('visibilitychange', () => {
+      if(!window.game) return;
+      document.hidden ? window.game.loop.stop() : window.game.loop.start();
+    });
+  }
+
+  /** Soft edge darkening to keep eyes on the board (cheap overdraw, no extra textures). */
+  _drawVignette() {
+    const v = this.add.graphics().setDepth(1).setAlpha(0.4);
+    v.fillStyle(0x020617, 0.55);
+    v.fillRect(0, 0, GW, 120);
+    v.fillRect(0, GH - 160, GW, 160);
+    v.fillStyle(0x020617, 0.35);
+    v.fillRect(0, 0, 40, GH);
+    v.fillRect(GW - 40, 0, 40, GH);
+  }
+
+  _drawBoard(){
+    const gfx = this.add.graphics().setDepth(2);
+    gfx.fillStyle(C.primary, 0.08);
+    gfx.fillRoundedRect(this.BOARD_X - 10, this.BOARD_Y - 10, this.BOARD_SIZE + 20, this.BOARD_SIZE + 20, 24);
+    gfx.fillStyle(C.border, 1);
+    gfx.fillRoundedRect(this.BOARD_X - 4, this.BOARD_Y - 4, this.BOARD_SIZE + 8, this.BOARD_SIZE + 8, 20);
+    gfx.fillStyle(C.board, 1);
+    gfx.fillRoundedRect(this.BOARD_X, this.BOARD_Y, this.BOARD_SIZE, this.BOARD_SIZE, 18);
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        const {x: cx, y: cy} = this._cellPos(r, c);
+        gfx.fillStyle(C.cell, 1);
+        gfx.fillRoundedRect(cx - this.CELL_SIZE/2, cy - this.CELL_SIZE/2, this.CELL_SIZE, this.CELL_SIZE, 10);
+        gfx.lineStyle(1, C.border, 0.35);
+        gfx.strokeRoundedRect(cx - this.CELL_SIZE/2, cy - this.CELL_SIZE/2, this.CELL_SIZE, this.CELL_SIZE, 10);
+      }
+    }
+  }
+
+  _cellPos(r, c){
+    const x = this.BOARD_X + this.BOARD_PAD + c * (this.CELL_SIZE + this.CELL_GAP) + this.CELL_SIZE/2;
+    const y = this.BOARD_Y + this.BOARD_PAD + r * (this.CELL_SIZE + this.CELL_GAP) + this.CELL_SIZE/2;
+    return {x, y};
+  }
+
+  _createTile(r, c, val, animate=false){
+    const {x, y} = this._cellPos(r, c);
+    const tc = tileColor(val);
+    const cont = this.add.container(x, y).setDepth(5);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(tc.bg, 1);
+    bg.fillRoundedRect(-this.CELL_SIZE/2, -this.CELL_SIZE/2, this.CELL_SIZE, this.CELL_SIZE, 10);
+    bg.fillStyle(0xffffff, 0.1);
+    bg.fillRoundedRect(-this.CELL_SIZE/2 + 3, -this.CELL_SIZE/2 + 3, this.CELL_SIZE - 6, this.CELL_SIZE * 0.36, {tl:8, tr:8, bl:0, br:0});
+
+    const fontSize = val >= 1024 ? '32px' : val >= 128 ? '38px' : '48px';
+    const txt = this.add.text(0, 0, `${val}`, {
+      fontSize, fontFamily: Theme.fontUI,
+      fontStyle: '800', color: tc.text,
+      stroke: '#00000033', strokeThickness: 2,
+    }).setOrigin(0.5);
+
+    cont.add([bg, txt]);
+
+    if(animate){
+      cont.setScale(0);
+      this.tweens.add({ targets: cont, scale: 1, duration: 220, ease: 'Back.easeOut', delay: 70 });
+    }
+
+    return cont;
+  }
+
+  _renderAllTiles(){
+    Object.values(this.tileContainers).forEach(t => t.destroy());
+    this.tileContainers = {};
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        if(this.grid[r][c] !== 0){
+          this.tileContainers[`${r}_${c}`] = this._createTile(r, c, this.grid[r][c]);
+        }
+      }
+    }
+  }
+
+  _buildHUD() {
+    const labelStyle = {
+      fontFamily: Theme.fontUI,
+      fontSize: '13px',
+      color: '#7dd3fc',
+      fontStyle: '700',
+    };
+    const valueStyle = {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '34px',
+      color: '#f0f9ff',
+      fontStyle: '800',
+    };
+
+    // Header strip cards (score / timer / best) — balanced layout
+    this.scoreHud = new AnimatedScore(this, 150, 118, 'SCORE', labelStyle, valueStyle);
+    this.bestHud = new AnimatedScore(this, 570, 118, 'BEST', labelStyle, {
+      ...valueStyle,
+      fontSize: '32px',
+      color: '#7dd3fc',
+    });
+    this.bestHud.snap(Save.data.bestScore);
+
+    this.sessionTimer = new CircularSessionTimer(this, GW / 2, 118, 52);
+
+    const movesLbl = this.add.text(GW / 2, 198, 'MOVES', {
+      fontFamily: Theme.fontUI,
+      fontSize: '12px',
+      color: '#64748b',
+      fontStyle: '700',
+    }).setOrigin(0.5);
+    this.movesText = this.add.text(GW / 2, 224, '0', {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '28px',
+      color: '#e2e8f0',
+      fontStyle: '800',
+    }).setOrigin(0.5);
+
+    this.depthMeter = new DepthMeter(this, GW / 2, 312, 620, 22);
+    this.depthMeter.setProgress01(this._ascentProgress(), this);
+
+    this._hudRoot.add([this.scoreHud, this.bestHud, this.sessionTimer, movesLbl, this.movesText, this.depthMeter]);
+
+    this.scoreHud.setTarget(0, false);
+
+    this.tweens.add({
+      targets: this._hudRoot,
+      y: { from: -24, to: 0 },
+      alpha: { from: 0, to: 1 },
+      duration: 520,
+      ease: 'Cubic.easeOut',
+    });
+  }
+
+  _ascentProgress() {
+    const m = maxTileOnGrid(this.grid);
+    if (m <= 0) return 0;
+    const log = Math.log2(m);
+    return Phaser.Math.Clamp((log - 1) / (11 - 1), 0, 1);
+  }
+
+  update(time) {
+    if (!this.sessionTimer || this._paused || this.gameOver) return;
+    this.sessionTimer.updateFromTime(time);
+  }
+
+  _setupInput(){
+    this.swipeStart = null;
+    this.input.on('pointerdown', (p) => {
+      if(this.animating || this.gameOver || this._paused) return;
+      if(Sfx.ctx && Sfx.ctx.state === 'suspended') Sfx.ctx.resume();
+      this.swipeStart = { x: p.x, y: p.y };
+    });
+    this.input.on('pointerup', (p) => {
+      if(!this.swipeStart || this.animating || this.gameOver || this._paused) return;
+      const dx = p.x - this.swipeStart.x;
+      const dy = p.y - this.swipeStart.y;
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
+      this.swipeStart = null;
+      if(Math.max(absDx, absDy) < 30) return;
+      let dir;
+      if(absDx > absDy) dir = dx > 0 ? 'right' : 'left';
+      else dir = dy > 0 ? 'down' : 'up';
+      this._doMove(dir);
+    });
+
+    this.input.keyboard.on('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this._togglePause();
+        return;
+      }
+      if(this.animating || this.gameOver || this._paused) return;
+      const map = { ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down',
+                    a:'left', d:'right', w:'up', s:'down' };
+      if(map[e.key]) this._doMove(map[e.key]);
+      if(e.key === 'z' && (e.ctrlKey || e.metaKey)) this._undo();
+    });
+  }
+
+  _togglePause() {
+    if (this.gameOver) return;
+    this._paused = !this._paused;
+    const host = document.getElementById('game-canvas-host');
+    if (host) host.classList.toggle('gp-blur', this._paused);
+    this.registry.events.emit('gamePause', this._paused);
+    if (this._paused) Sfx.tap();
+  }
+
+  setPaused(v) {
+    this._paused = !!v;
+    const host = document.getElementById('game-canvas-host');
+    if (host) host.classList.toggle('gp-blur', this._paused);
+    this.registry.events.emit('gamePause', this._paused);
+  }
+
+  _doMove(dir){
+    if (this._paused) return;
+    const prevGrid = cloneGrid(this.grid);
+    const prevScore = this.score;
+    const result = moveGrid(this.grid, dir);
+    if(!result.moved){ Sfx.invalid(); return; }
+
+    this.undoStack.push({ grid: prevGrid, score: prevScore, moveCount: this.moveCount });
+    if(this.undoStack.length > 20) this.undoStack.shift();
+
+    this.grid = result.grid;
+    this.score += result.score;
+    this.moveCount++;
+
+    if(this.score > Save.data.bestScore){
+      Save.data.bestScore = this.score;
+      Save.write();
+    }
+
+    this.animating = true;
+    this._animateMove(result, () => {
+      const newCell = addRandom(this.grid);
+      if(newCell){
+        this.tileContainers[`${newCell.r}_${newCell.c}`] = this._createTile(newCell.r, newCell.c, this.grid[newCell.r][newCell.c], true);
+      }
+      this._updateHUD();
+
+      if(!this.gameWon && !this.keepPlaying && hasWon(this.grid)){
+        this.gameWon = true;
+        this.time.delayedCall(300, () => this._showWin());
+      } else if(!canMove(this.grid)){
+        this.gameOver = true;
+        Save.data.gamesPlayed++;
+        Save.write();
+        this.time.delayedCall(400, () => this._showGameOver());
+      }
+      this.animating = false;
+    });
+
+    if(result.mergedCells.length > 0) Sfx.merge();
+    else Sfx.slide();
+  }
+
+  /**
+   * Classic 2048-style motion: tiles slide from old cells to new, then board is rebuilt;
+   * merged destinations get a short pop + bubbles.
+   */
+  _animateMove(result, onComplete) {
+    Object.values(this.tileContainers).forEach((t) => { try { t.destroy(); } catch (e) {} });
+    this.tileContainers = {};
+    const tracks = result.tracks || [];
+    const SLIDE_MS = 130;
+    const EASE = 'Cubic.easeOut';
+    const flyers = [];
+    let pending = 0;
+    const finishFly = () => {
+      pending--;
+      if (pending <= 0) this._afterSlideFlyers(result, onComplete, flyers);
+    };
+
+    for (const tr of tracks) {
+      const p0 = this._cellPos(tr.sr, tr.sc);
+      const p1 = this._cellPos(tr.er, tr.ec);
+      const cont = this._createTile(tr.sr, tr.sc, tr.val, false);
+      flyers.push(cont);
+      if (p0.x !== p1.x || p0.y !== p1.y) {
+        pending++;
+        this.tweens.add({
+          targets: cont,
+          x: p1.x,
+          y: p1.y,
+          duration: SLIDE_MS,
+          ease: EASE,
+          onComplete: finishFly,
+        });
+      }
+    }
+    if (pending === 0) this._afterSlideFlyers(result, onComplete, flyers);
+  }
+
+  _afterSlideFlyers(result, onComplete, flyers) {
+    flyers.forEach((f) => { try { f.destroy(); } catch (e) {} });
+    this._renderAllTiles();
+    const merged = result.mergedCells || [];
+    for (const m of merged) {
+      const key = `${m.r}_${m.c}`;
+      const t = this.tileContainers[key];
+      if (t) {
+        t.setScale(0.22);
+        this.tweens.add({ targets: t, scale: 1, duration: 175, ease: 'Back.easeOut' });
+        this._spawnMergeBubbles(t.x, t.y);
+      }
+    }
+    const delay = merged.length ? 95 : 35;
+    this.time.delayedCall(delay, onComplete);
+  }
+
+  _spawnMergeBubbles(x, y){
+    for(let i=0; i<5; i++){
+      const size = Phaser.Math.Between(3, 7);
+      const b = this.add.circle(x, y, size, 0x67e8f9, 0.45).setDepth(10);
+      this.tweens.add({
+        targets: b,
+        y: y - Phaser.Math.Between(30, 80),
+        x: x + Phaser.Math.Between(-30, 30),
+        alpha: 0,
+        scale: 0.3,
+        duration: Phaser.Math.Between(400, 800),
+        ease: 'Cubic.easeOut',
+        onComplete: () => b.destroy(),
+      });
+    }
+  }
+
+  _updateHUD(){
+    const merged = this.scoreHud && this.scoreHud.target !== this.score;
+    this.scoreHud.setTarget(this.score, !!merged);
+    this.bestHud.snap(Save.data.bestScore);
+    this.movesText.setText(`${this.moveCount}`);
+    this.depthMeter.setProgress01(this._ascentProgress(), this);
+  }
+
+  _undo(){
+    if(this.undoStack.length === 0 || this.gameOver || this._paused) return;
+    const prev = this.undoStack.pop();
+    this.grid = prev.grid;
+    this.score = prev.score;
+    this.moveCount = prev.moveCount;
+    this._renderAllTiles();
+    this._updateHUD();
+    Sfx.undo();
+  }
+
+  _showWin(){
+    Sfx.victory();
+    const overlay = this.add.rectangle(GW/2, GH/2, GW, GH, 0x020617, 0).setDepth(50).setInteractive();
+    this.tweens.add({ targets: overlay, fillAlpha: 0.72, duration: 320 });
+
+    const panel = this.add.container(GW/2, GH/2).setDepth(51).setAlpha(0);
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(C.surface, 1);
+    panelBg.fillRoundedRect(-260, -210, 520, 420, 22);
+    panelBg.lineStyle(2, C.primary, 0.45);
+    panelBg.strokeRoundedRect(-260, -210, 520, 420, 22);
+    panelBg.fillStyle(C.primary, 0.06);
+    panelBg.fillRoundedRect(-258, -208, 516, 200, {tl:20,tr:20,bl:0,br:0});
+
+    const titleTxt = this.add.text(0, -150, 'SURFACED!', {
+      fontSize: '46px', fontFamily: Theme.fontDisplay,
+      fontStyle: '800', color: '#34d399',
+      stroke: '#020617', strokeThickness: 6,
+    }).setOrigin(0.5);
+
+    const scoreTxt = this.add.text(0, -68, `Score  ${this.score}`, {
+      fontSize: '30px', fontFamily: Theme.fontUI,
+      fontStyle: '700', color: '#f0f9ff',
+    }).setOrigin(0.5);
+
+    const movesTxt = this.add.text(0, -22, `Moves  ${this.moveCount}`, {
+      fontSize: '22px', fontFamily: Theme.fontUI,
+      color: '#94a3b8',
+    }).setOrigin(0.5);
+
+    const cx = GW / 2, cy = GH / 2;
+    const keepBtn = new StyledButton(this, cx, cy + 78, 240, 58, 'grad_btn_primary', 'DIVE DEEPER', {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '20px',
+      color: '#020617',
+      fontStyle: '800',
+    }, () => {
+      this.keepPlaying = true;
+      keepBtn.destroy();
+      newBtn.destroy();
+      panel.destroy();
+      overlay.destroy();
+    });
+
+    const newBtn = new StyledButton(this, cx, cy + 152, 240, 58, 'grad_btn_accent', 'NEW DIVE', {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '20px',
+      color: '#020617',
+      fontStyle: '800',
+    }, () => {
+      this.cameras.main.fadeOut(280, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.stop('UI');
+        this.scene.restart();
+      });
+    });
+    keepBtn.setDepth(52);
+    newBtn.setDepth(52);
+
+    panel.add([panelBg, titleTxt, scoreTxt, movesTxt]);
+    this.tweens.add({ targets: panel, alpha: 1, y: { from: GH/2 + 50, to: GH/2 }, duration: 450, ease: 'Back.easeOut' });
+
+    this._spawnConfetti();
+  }
+
+  _showGameOver(){
+    Sfx.gameOver();
+    const overlay = this.add.rectangle(GW/2, GH/2, GW, GH, 0x020617, 0).setDepth(50).setInteractive();
+    this.tweens.add({ targets: overlay, fillAlpha: 0.72, duration: 320 });
+
+    const panel = this.add.container(GW/2, GH/2).setDepth(51).setAlpha(0);
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(C.surface, 1);
+    panelBg.fillRoundedRect(-260, -190, 520, 380, 22);
+    panelBg.lineStyle(2, C.danger, 0.35);
+    panelBg.strokeRoundedRect(-260, -190, 520, 380, 22);
+
+    const titleTxt = this.add.text(0, -128, 'DROWNED', {
+      fontSize: '46px', fontFamily: Theme.fontDisplay,
+      fontStyle: '800', color: '#fb7185',
+      stroke: '#020617', strokeThickness: 6,
+    }).setOrigin(0.5);
+
+    const scoreTxt = this.add.text(0, -48, `Score  ${this.score}`, {
+      fontSize: '30px', fontFamily: Theme.fontUI,
+      fontStyle: '700', color: '#f0f9ff',
+    }).setOrigin(0.5);
+
+    const movesTxt = this.add.text(0, -4, `Moves  ${this.moveCount}`, {
+      fontSize: '22px', fontFamily: Theme.fontUI,
+      color: '#94a3b8',
+    }).setOrigin(0.5);
+
+    const bestNote = this.score >= Save.data.bestScore ?
+      this.add.text(0, 44, 'NEW BEST!', { fontSize: '20px', fontFamily: Theme.fontDisplay, fontStyle: '800', color: '#38bdf8' }).setOrigin(0.5) :
+      this.add.text(0, 44, `Best  ${Save.data.bestScore}`, { fontSize: '20px', fontFamily: Theme.fontUI, color: '#94a3b8' }).setOrigin(0.5);
+
+    const rcx = GW / 2, rcy = GH / 2;
+    const retryBtn = new StyledButton(this, rcx, rcy + 128, 240, 58, 'grad_btn_primary', 'RESURFACE', {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '20px',
+      color: '#020617',
+      fontStyle: '800',
+    }, () => {
+      this.cameras.main.fadeOut(280, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.stop('UI');
+        this.scene.restart();
+      });
+    });
+    retryBtn.setDepth(52);
+
+    panel.add([panelBg, titleTxt, scoreTxt, movesTxt, bestNote]);
+    this.tweens.add({ targets: panel, alpha: 1, y: { from: GH/2 + 50, to: GH/2 }, duration: 450, ease: 'Back.easeOut' });
+  }
+
+  _spawnConfetti(){
+    const colors = [0x22d3ee, 0x34d399, 0x38bdf8, 0x818cf8, 0xa78bfa, 0x14b8a6];
+    for(let i = 0; i < 70; i++){
+      const isCircle = Math.random() > 0.5;
+      const p = isCircle
+        ? this.add.circle(Phaser.Math.Between(50, 670), GH + 20, Phaser.Math.Between(4, 10), colors[i % colors.length], 0.7)
+        : this.add.rectangle(Phaser.Math.Between(50, 670), GH + 20,
+            Phaser.Math.Between(7, 16), Phaser.Math.Between(7, 16),
+            colors[i % colors.length]);
+      p.setDepth(55).setRotation(Phaser.Math.FloatBetween(0, Math.PI*2));
+      this.tweens.add({
+        targets: p,
+        y: -40,
+        x: p.x + Phaser.Math.Between(-90, 90),
+        angle: Phaser.Math.Between(200, 560),
+        alpha: 0,
+        duration: Phaser.Math.Between(1800, 3500),
+        delay: Phaser.Math.Between(0, 700),
+        ease: 'Cubic.easeOut',
+        onComplete: () => p.destroy(),
+      });
+    }
+  }
+}
+
+class UIScene extends Phaser.Scene {
+  constructor(){ super('UI'); }
+
+  create(data){
+    this.gameScene = data.gameScene || this.scene.get('Game');
+
+    const ACT_Y = 1040;
+    const btnSize = 64;
+    const gap = 26;
+    const totalW = btnSize * 3 + gap * 2;
+    const startX = (GW - totalW) / 2 + btnSize / 2;
+
+    const barH = 152;
+    const barTop = ACT_Y - barH / 2;
+
+    const actBg = this.add.graphics().setDepth(0);
+    actBg.fillStyle(C.surface, 0.88);
+    actBg.fillRoundedRect(36, barTop, GW - 72, barH, 22);
+    actBg.lineStyle(1, C.border, 0.4);
+    actBg.strokeRoundedRect(36, barTop, GW - 72, barH, 22);
+    actBg.fillStyle(C.primary, 0.05);
+    actBg.fillRoundedRect(40, barTop + 5, GW - 80, 50, { tl: 18, tr: 18, bl: 0, br: 0 });
+
+    this._actionBtn(startX, ACT_Y, btnSize, '↩', 'UNDO', () => {
+      this.gameScene._undo();
+    });
+
+    this._actionBtn(startX + btnSize + gap, ACT_Y, btnSize, '⎘', 'NEW', () => {
+      document.getElementById('game-canvas-host')?.classList.remove('gp-blur');
+      this.gameScene.setPaused(false);
+      this.gameScene.cameras.main.fadeOut(280, 0, 0, 0);
+      this.gameScene.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.stop();
+        this.gameScene.scene.restart();
+      });
+    });
+
+    const snd = this._actionBtn(startX + (btnSize + gap) * 2, ACT_Y, btnSize,
+      Sfx.muted ? '🔇' : '🔊', 'SOUND', () => {
+        Sfx.muted = !Sfx.muted;
+        Save.data.sound = !Sfx.muted;
+        Save.write();
+        snd.icon.setText(Sfx.muted ? '🔇' : '🔊');
+        Sfx.tap();
+      });
+
+    this._pauseLayer = this.add.container(0, 0).setDepth(100).setVisible(false);
+    const dim = this.add.rectangle(GW / 2, GH / 2, GW, GH, 0x020617, 0.55).setInteractive();
+    const pcx = GW / 2, pcy = GH / 2;
+    const card = this.add.graphics();
+    card.fillStyle(C.surface, 0.98);
+    card.fillRoundedRect(pcx - 200, pcy - 130, 400, 260, 20);
+    card.lineStyle(2, C.primary, 0.4);
+    card.strokeRoundedRect(pcx - 200, pcy - 130, 400, 260, 20);
+    const pt = this.add.text(pcx, pcy - 72, 'PAUSED', {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '36px',
+      fontStyle: '800',
+      color: '#e0f2fe',
+    }).setOrigin(0.5);
+    const resume = new StyledButton(this, pcx, pcy + 20, 260, 56, 'grad_btn_primary', 'RESUME', {
+      fontFamily: Theme.fontDisplay,
+      fontSize: '20px',
+      color: '#020617',
+      fontStyle: '800',
+    }, () => {
+      this.gameScene._togglePause();
+    });
+    const menu = new StyledButton(this, pcx, pcy + 92, 260, 50, 'grad_btn_muted', 'MAIN MENU', {
+      fontFamily: Theme.fontUI,
+      fontSize: '17px',
+      color: '#e2e8f0',
+      fontStyle: '700',
+    }, () => {
+      this.gameScene.setPaused(false);
+      this._pauseLayer.setVisible(false);
+      document.getElementById('game-canvas-host')?.classList.remove('gp-blur');
+      this.gameScene.cameras.main.fadeOut(320, 0, 0, 0);
+      this.gameScene.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.stop();
+        this.gameScene.scene.start('Menu');
+      });
+    });
+    resume.setDepth(101);
+    menu.setDepth(101);
+    this._pauseLayer.add([dim, card, pt, resume, menu]);
+
+    this._syncPauseOverlay = (p) => { this._pauseLayer.setVisible(!!p); };
+    this.registry.events.on('gamePause', this._syncPauseOverlay);
+    this.events.once('shutdown', () => {
+      this.registry.events.off('gamePause', this._syncPauseOverlay);
+    });
+  }
+
+  /**
+   * Icon action chip: gradient fill + glow on hover (microinteraction).
+   * Returns { container, icon } so callers can update emoji text safely.
+   */
+  _actionBtn(x, y, size, icon, label, callback){
+    const cont = this.add.container(x, y).setDepth(2);
+    const bg = this.add.graphics();
+    const draw = (glow = false) => {
+      bg.clear();
+      if (glow) bg.fillStyle(C.primary, 0.12);
+      else bg.fillStyle(C.cell, 1);
+      bg.fillRoundedRect(-size/2 - 2, -size/2 - 2, size + 4, size + 4, 14);
+      bg.fillStyle(C.surface, 1);
+      bg.fillRoundedRect(-size/2, -size/2, size, size, 12);
+      bg.lineStyle(1, C.borderLt, glow ? 0.9 : 0.45);
+      bg.strokeRoundedRect(-size/2, -size/2, size, size, 12);
+    };
+    draw(false);
+    const iconTxt = this.add.text(0, -5, icon, {
+      fontSize: '28px', fontFamily: Theme.fontUI,
+    }).setOrigin(0.5);
+    const labelTxt = this.add.text(0, size / 2 + 14, label, {
+      fontSize: '12px', fontFamily: Theme.fontUI,
+      fontStyle: '700', color: '#7dd3fc',
+    }).setOrigin(0.5);
+    cont.add([bg, iconTxt, labelTxt]);
+    const hitH = size + 36;
+    const hit = new Phaser.Geom.Rectangle(-size / 2, -size / 2 - 5, size, hitH + 8);
+    cont.setInteractive({
+      hitArea: hit,
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+    let pressed = false;
+    cont
+      .on('pointerover', () => {
+        if (pressed) return;
+        draw(true);
+        this.tweens.add({ targets: cont, scale: 1.08, duration: 90, ease: 'Cubic.easeOut' });
+      })
+      .on('pointerout', () => {
+        if (pressed) return;
+        draw(false);
+        this.tweens.add({ targets: cont, scale: 1, duration: 100 });
+      })
+      .on('pointerdown', () => {
+        pressed = true;
+        this.tweens.add({ targets: cont, scale: 0.92, duration: 55, ease: 'Cubic.easeIn' });
+        Sfx.tap();
+      })
+      .on('pointerup', () => {
+        if (!pressed) return;
+        pressed = false;
+        draw(false);
+        this.tweens.add({ targets: cont, scale: 1.05, duration: 80, yoyo: true });
+        callback();
+      })
+      .on('pointerupoutside', () => {
+        if (!pressed) return;
+        pressed = false;
+        draw(false);
+        this.tweens.killTweensOf(cont);
+        cont.setScale(1);
+      });
+    return { container: cont, icon: iconTxt };
+  }
+}
+
+const config = {
+  type: Phaser.AUTO,
+  width: GW,
+  height: GH,
+  parent: 'game-canvas-host',
+  backgroundColor: '#020617',
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: GW,
+    height: GH,
+  },
+  scene: [BootScene, MenuScene, GameScene, UIScene],
+  input: { activePointers: 3 },
+  render: { antialias: true, pixelArt: false },
+};
+
+window.game = new Phaser.Game(config);
+
+window.addEventListener('resize', () => {
+  requestAnimationFrame(layoutDomStartButton);
+});
+setTimeout(() => {
+  window.game?.scale?.on?.('resize', layoutDomStartButton);
+}, 0);
+
+document.getElementById('gp-start-btn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  tryStartGameFromDomButton();
+});
+
+const erosPlay = {
+  init()         { window.parent?.postMessage({ type:'erosplay_init' }, '*'); },
+  gameplayStart(){ window.parent?.postMessage({ type:'erosplay_gameplayStart' }, '*'); },
+  gameplayStop() { window.parent?.postMessage({ type:'erosplay_gameplayStop' }, '*'); },
+  submitScore(s) { window.parent?.postMessage({ type:'erosplay_score', score:s }, '*'); },
+};
+window.addEventListener('message', e => {
+  if(e.data?.type === 'erosplay_mute')   Sfx.muted = true;
+  if(e.data?.type === 'erosplay_resume') Sfx.muted = !Save.data?.sound;
+});
+document.addEventListener('visibilitychange', () => {
+  if(!window.game) return;
+  document.hidden ? window.game.loop.stop() : window.game.loop.start();
+});
+erosPlay.init();
+</script>
+</body>
+</html>
