@@ -3,18 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Deep Sea</title>
+<title>2048 deep sea</title>
 <!-- Modern gaming + UI fonts: Orbitron (headings), Inter (body) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Orbitron:wght@600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+<!-- Same folder as this file (e.g. GitHub Pages). CDN Phaser causes opaque "Script error" Line:0. -->
+<script src="phaser.min.js"></script>
 <style>
 /* Minimal shell — same spirit as knife_hit: black canvas, flex center, no chrome */
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden;touch-action:none}
+/* Deep-sea frame: side letterbox + vertical water gradient (in-game area) */
 body{
-  background:#000;
+  background:#105B73;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -25,12 +27,13 @@ body{
 /* Centered 9:16 frame; Phaser FIT + DOM START overlay */
 .gp-stage{
   position:relative;
-  width:min(calc(100vw - 12px), calc((100dvh - 12px) * 9 / 16));
-  max-width:600px;
+  width:min(calc(100vw - 8px), calc((100dvh - 8px) * 9 / 16));
+  max-width:min(100vw - 8px, 700px);
   aspect-ratio:9 / 16;
+  background:linear-gradient(180deg, #00A9C1 0%, #004F60 100%);
   border-radius:12px;
   overflow:visible;
-  box-shadow:0 0 0 1px rgba(56,189,248,0.12),0 20px 50px rgba(0,0,0,0.65);
+  box-shadow:0 0 0 1px rgba(0,0,0,0.2),0 20px 50px rgba(0,0,0,0.45);
 }
 #game-canvas-host{
   position:absolute;
@@ -123,12 +126,24 @@ body{
   transition:filter 0.35s ease;
 }
 @media (min-width:900px){
-  .gp-stage{max-width:520px}
+  .gp-stage{max-width:min(100vw - 8px, 700px)}
 }
+/* Shown when the tab is in the background (not a script error) */
+#gp-tab-pause-hint{
+  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
+  z-index:9998;padding:8px 16px;border-radius:999px;pointer-events:none;
+  font:600 12px/1.3 Inter,system-ui,sans-serif;color:#a5f3fc;letter-spacing:.04em;
+  background:rgba(2,6,23,0.82);
+  border:1px solid rgba(56,189,248,0.28);
+  box-shadow:0 8px 24px rgba(0,0,0,0.35);
+  opacity:0;visibility:hidden;transition:opacity .25s ease,visibility .25s ease;
+}
+#gp-tab-pause-hint.gp-tab-pause-hint--show{opacity:1;visibility:visible}
 </style>
 </head>
 <body>
 <div id="err" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#450a0a;color:#fecaca;font-size:13px;padding:10px;display:none;white-space:pre-wrap;max-height:40vh;overflow:auto;font-family:ui-monospace,monospace"></div>
+<div id="gp-tab-pause-hint" role="status" aria-live="polite" hidden>Paused while you view another tab</div>
 <div class="gp-stage">
   <div id="game-canvas-host" aria-label="Game canvas"></div>
   <button type="button" id="gp-start-btn" class="gp-start-btn" hidden aria-hidden="true"><span class="gp-start-btn__label">START</span></button>
@@ -143,8 +158,8 @@ window.onerror = function (msg, url, line, col, err) {
 };
 
 // ═══════════════════════════════════════════════════════
-// Deep Sea — Production UI layer
-// Orbitron + Inter · modular Phaser UI · responsive shell
+// 2048 deep sea — Production UI (Phaser + inline DOM)
+// Orbitron + Inter · responsive shell
 // ═══════════════════════════════════════════════════════
 
 const GW = 720, GH = 1280;
@@ -171,12 +186,14 @@ const Theme = {
 };
 
 const C = {
-  bg:       0x020617,
+  /* Menu / shell; playfield uses gameField (dark) so neon tiles read like the reference */
+  bg:       0x004f60,
+  gameField:0x0a0a0f,
   surface:  0x0f172a,
-  board:    0x051b2d,
-  cell:     0x0c2744,
-  border:   0x164e71,
-  borderLt: 0x1e5f8a,
+  board:    0x0c0e14,
+  cell:     0x141923,
+  border:   0x222831,
+  borderLt: 0x2f3642,
   primary:  0x22d3ee,
   primaryD: 0x0891b2,
   accent:   0x34d399,
@@ -188,24 +205,31 @@ const C = {
   subtext:  0x94a3b8,
 };
 
+/**
+ * "Juicy" 2048-style: lighter top → deeper bottom (ref: purple / lime / teal / pink / coral / …).
+ * premium: thick gold border (logo tile / ultra tiles).
+ * sparkleFrom: show corner glints (bioluminescent read for deep-sea).
+ */
 const TILE_COLORS = {
-  2:    { bg: 0x0c4a6e, text: '#bae6fd' },
-  4:    { bg: 0x0369a1, text: '#e0f2fe' },
-  8:    { bg: 0x0ea5e9, text: '#020617' },
-  16:   { bg: 0x06b6d4, text: '#020617' },
-  32:   { bg: 0x14b8a6, text: '#020617' },
-  64:   { bg: 0x34d399, text: '#020617' },
-  128:  { bg: 0x38bdf8, text: '#020617' },
-  256:  { bg: 0x818cf8, text: '#ffffff' },
-  512:  { bg: 0xa78bfa, text: '#ffffff' },
-  1024: { bg: 0xc084fc, text: '#ffffff' },
-  2048: { bg: 0xf0abfc, text: '#020617' },
-  4096: { bg: 0xfbbf24, text: '#020617' },
-  8192: { bg: 0xfb923c, text: '#020617' },
+  /* 2 = cool “deep water” blue; 4 = bright yellow / gold (not red, so it won’t read as “danger”) */
+  2:     { top: 0x7dd3fc, bottom: 0x0c4a6e, text: '#ffffff', edge: 0x031922 },
+  4:     { top: 0xfff176, bottom: 0xca8a04, text: '#0a0a0a', edge: 0x3a2800 },
+  8:     { top: 0xbaa0ff, bottom: 0x5b21b6, text: '#ffffff', edge: 0x1e0a3a },
+  16:    { top: 0xd8f9a0, bottom: 0x4a7c16, text: '#0a0a0a', edge: 0x1a3008 },
+  32:    { top: 0x6ee7d2, bottom: 0x0c7665, text: '#042f2a', edge: 0x04221e },
+  64:    { top: 0xfb7eb8, bottom: 0x9d174d, text: '#ffffff', edge: 0x2d0518, sparkle: true },
+  128:   { top: 0xff8f73, bottom: 0xbf2c1a, text: '#ffffff', edge: 0x2d0a04, sparkle: true },
+  256:   { top: 0x9d9dff, bottom: 0x4338ca, text: '#ffffff', edge: 0x0f0a2e, sparkle: true },
+  512:   { top: 0xccc3ff, bottom: 0x5b2fb8, text: '#ffffff', edge: 0x1a0a35, sparkle: true },
+  1024:  { top: 0xffe45c, bottom: 0xca6b0a, text: '#0a0a0a', edge: 0x2d2004, sparkle: true },
+  2048:  { top: 0xa68bff, bottom: 0x3c1367, text: '#ffffff', edge: 0x0f0520, premium: true, sparkle: true },
+  4096:  { top: 0xffd147, bottom: 0xbc5000, text: '#0a0a0a', edge: 0x2a1400, premium: true, sparkle: true },
+  8192:  { top: 0xff9f59, bottom: 0x9a3412, text: '#ffffff', edge: 0x1f0a04, premium: true, sparkle: true },
 };
 
 function tileColor(val) {
-  return TILE_COLORS[val] || { bg: 0x071c2e, text: '#e0f2fe' };
+  if (TILE_COLORS[val]) return TILE_COLORS[val];
+  return { top: 0x1e2b3a, bottom: 0x0f1520, text: '#e2e8f0', edge: 0x0a0a0a, sparkle: false, premium: false };
 }
 
 // ═══ Phaser UI helpers: gradients via lightweight canvas textures (no heavy DOM) ═══
@@ -438,19 +462,31 @@ class DepthMeter extends Phaser.GameObjects.Container {
     }).setOrigin(0.5, 1);
     this.add([this.back, this.fill, this.shine, this.icon, this.label]);
     this.progress = 0;
+    this._tween = null;
     this._redraw();
   }
 
   setProgress01(p, sceneRef) {
     this.progress = Phaser.Math.Clamp(p, 0, 1);
-    if (this._tween) this._tween.remove();
-    this._tween = sceneRef.tweens.add({
-      targets: this,
-      _displayP: this.progress,
+    if (this._tween) {
+      this._tween.remove();
+      this._tween = null;
+    }
+    // addCounter: tweening custom _displayP on a Container can break TweenData (this.callback) in Phaser 3.80
+    this._tween = sceneRef.tweens.addCounter({
+      from: this._displayP,
+      to: this.progress,
       duration: 280,
       ease: 'Cubic.easeOut',
-      onUpdate: () => this._redraw(),
-      onComplete: () => { this._displayP = this.progress; this._redraw(); },
+      onUpdate: (t) => {
+        this._displayP = t.getValue();
+        this._redraw();
+      },
+      onComplete: () => {
+        this._displayP = this.progress;
+        this._redraw();
+        this._tween = null;
+      },
     });
   }
 
@@ -693,27 +729,26 @@ function moveGrid(grid, dir) {
 }
 
 function spawnBubbles(scene, count=12, depth=1) {
-  for(let i=0; i<count; i++){
+  for (let i = 0; i < count; i++) {
     const size = Phaser.Math.Between(3, 10);
-    const x = Phaser.Math.Between(30, GW-30);
-    const startY = Phaser.Math.Between(GH + 20, GH + 400);
-    const b = scene.add.circle(x, startY, size, 0x67e8f9, Phaser.Math.FloatBetween(0.04, 0.14))
-      .setDepth(depth);
-    scene.tweens.add({
-      targets: b,
-      y: Phaser.Math.Between(-40, -200),
-      x: b.x + Phaser.Math.Between(-60, 60),
-      alpha: 0,
-      duration: Phaser.Math.Between(6000, 14000),
-      delay: Phaser.Math.Between(0, 8000),
-      ease: 'Sine.easeInOut',
-      repeat: -1,
-      onRepeat: () => {
-        b.x = Phaser.Math.Between(30, GW-30);
-        b.y = GH + 20;
-        b.alpha = Phaser.Math.FloatBetween(0.04, 0.14);
-      }
-    });
+    const b = scene.add.circle(0, 0, size, 0x67e8f9, 0.1).setDepth(depth);
+    const loop = () => {
+      b.setPosition(Phaser.Math.Between(30, GW - 30), Phaser.Math.Between(GH + 20, GH + 400));
+      b.setAlpha(Phaser.Math.FloatBetween(0.04, 0.14));
+      const destY = Phaser.Math.Between(-40, -200);
+      const destX = b.x + Phaser.Math.Between(-60, 60);
+      scene.tweens.add({
+        targets: b,
+        y: destY,
+        x: destX,
+        alpha: 0,
+        duration: Phaser.Math.Between(6000, 14000),
+        delay: Phaser.Math.Between(0, 8000),
+        ease: 'Sine.easeInOut',
+        onComplete: loop,
+      });
+    };
+    loop();
   }
 }
 
@@ -777,7 +812,7 @@ class MenuScene extends Phaser.Scene {
     this.cameras.main.fadeIn(500, 0, 0, 0);
     this.cameras.main.setBackgroundColor(C.bg);
 
-    spawnBubbles(this, 15, 0);
+    spawnBubbles(this, 22, 0);
 
     const heroPanel = this.add.graphics().setDepth(1).setAlpha(0);
     const px = 24, py = 56, pw = GW - 48, ph = 900;
@@ -803,25 +838,32 @@ class MenuScene extends Phaser.Scene {
     const cx = GW / 2;
     const wrap = GW - 72;
 
-    const title = this.add.text(cx, 232, 'Deep Sea', {
-      fontSize: '86px', fontFamily: Theme.fontDisplay,
-      fontStyle: '800', color: '#22d3ee',
+    const t2048 = this.add.text(cx, 150, '2048', {
+      fontSize: '80px', fontFamily: Theme.fontDisplay,
+      fontStyle: '800', color: '#f0f9ff',
       stroke: '#020617', strokeThickness: 10,
-      letterSpacing: 2,
+      letterSpacing: 6,
     }).setOrigin(0.5).setAlpha(0).setDepth(2);
 
-    const howLabel = this.add.text(cx, 322, 'HOW TO START', {
+    const tSub = this.add.text(cx, 240, 'DEEP SEA', {
+      fontSize: '40px', fontFamily: Theme.fontDisplay,
+      fontStyle: '800', color: '#22d3ee',
+      stroke: '#020617', strokeThickness: 6,
+      letterSpacing: 18,
+    }).setOrigin(0.5).setAlpha(0).setDepth(2);
+
+    const howLabel = this.add.text(cx, 360, 'HOW TO START', {
       fontSize: '12px', fontFamily: Theme.fontUI,
       fontStyle: '700', color: '#5eead4', letterSpacing: 8,
     }).setOrigin(0.5).setAlpha(0).setDepth(2);
 
-    const howBody = this.add.text(cx, 358, 'Press START to open the board. Use arrow keys or swipe to merge tiles and keep ascending.', {
+    const howBody = this.add.text(cx, 400, 'Press START to open the board. Use arrow keys or swipe to merge tiles and keep ascending.', {
       fontSize: '17px', fontFamily: Theme.fontUI,
       fontStyle: '600', color: '#e0f2fe', align: 'center', lineSpacing: 11,
       wordWrap: { width: wrap },
     }).setOrigin(0.5).setAlpha(0).setDepth(2);
 
-    const best = this.add.text(cx, 454, `BEST  ${Save.data.bestScore}`, {
+    const best = this.add.text(cx, 498, `BEST  ${Save.data.bestScore}`, {
       fontSize: '24px', fontFamily: Theme.fontUI,
       fontStyle: '700', color: '#7dd3fc',
     }).setOrigin(0.5).setAlpha(0).setDepth(2);
@@ -835,13 +877,19 @@ class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5).setAlpha(0).setDepth(2);
 
     this.tweens.add({ targets: heroPanel, alpha: 1, duration: 700, ease: 'Sine.easeOut' });
-    this.tweens.add({ targets: title, alpha: 1, y: { from: 180, to: 232 }, duration: 800, ease: 'Back.easeOut' });
+    // Avoid y:{from,to} + alpha in one tween (Phaser 3.80 can leave TweenData.ease undefined → this.callback error)
+    this.tweens.add({ targets: t2048, alpha: 1, y: 200, duration: 900, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: tSub, alpha: 1, y: 286, duration: 800, delay: 120, ease: 'Cubic.easeOut' });
     this.tweens.add({ targets: howLabel, alpha: 1, duration: 450, delay: 200 });
     this.tweens.add({ targets: howBody, alpha: 1, duration: 500, delay: 300 });
     this.tweens.add({ targets: best, alpha: 1, duration: 500, delay: 380 });
     this.tweens.add({ targets: how, alpha: 1, duration: 550, delay: 500 });
 
-    this.tweens.add({ targets: title, y: '+=6', duration: 2600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: t2048, y: '+=5', duration: 2400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: tSub, y: '+=4', duration: 2000, yoyo: true, repeat: -1, delay: 200, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: t2048, scaleX: 1.04, scaleY: 1.04, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    tSub.setAlpha(0.82);
+    this.tweens.add({ targets: tSub, alpha: 1, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     this.time.delayedCall(450, () => setDomStartButtonVisible(true));
     this.events.once('shutdown', () => setDomStartButtonVisible(false));
@@ -903,11 +951,11 @@ class GameScene extends Phaser.Scene {
     setDomStartButtonVisible(false);
 
     this.cameras.main.fadeIn(450, 0, 0, 0);
-    this.cameras.main.setBackgroundColor(C.bg);
+    this.cameras.main.setBackgroundColor(C.gameField);
 
-    this.BOARD_PAD = 12;
-    this.CELL_GAP = 10;
-    this.BOARD_SIZE = 600;
+    this.BOARD_PAD = 10;
+    this.CELL_GAP = 8;
+    this.BOARD_SIZE = 640;
     this.CELL_SIZE = (this.BOARD_SIZE - this.BOARD_PAD*2 - this.CELL_GAP*(GRID_SIZE-1)) / GRID_SIZE;
     this.BOARD_X = (GW - this.BOARD_SIZE) / 2;
     this.BOARD_Y = 360;
@@ -939,20 +987,16 @@ class GameScene extends Phaser.Scene {
     this._setupInput();
 
     this.scene.launch('UI', { gameScene: this });
-
-    document.addEventListener('visibilitychange', () => {
-      if(!window.game) return;
-      document.hidden ? window.game.loop.stop() : window.game.loop.start();
-    });
   }
 
   /** Soft edge darkening to keep eyes on the board (cheap overdraw, no extra textures). */
   _drawVignette() {
+    const d = 0x001a22;
     const v = this.add.graphics().setDepth(1).setAlpha(0.4);
-    v.fillStyle(0x020617, 0.55);
+    v.fillStyle(d, 0.5);
     v.fillRect(0, 0, GW, 120);
     v.fillRect(0, GH - 160, GW, 160);
-    v.fillStyle(0x020617, 0.35);
+    v.fillStyle(d, 0.32);
     v.fillRect(0, 0, 40, GH);
     v.fillRect(GW - 40, 0, 40, GH);
   }
@@ -985,22 +1029,53 @@ class GameScene extends Phaser.Scene {
   _createTile(r, c, val, animate=false){
     const {x, y} = this._cellPos(r, c);
     const tc = tileColor(val);
+    const w = this.CELL_SIZE, h = this.CELL_SIZE;
     const cont = this.add.container(x, y).setDepth(5);
+    const rr = Phaser.Math.Clamp(w * 0.2, 9, 22);
+    const edge = tc.edge != null ? tc.edge : 0x0a0a0a;
 
     const bg = this.add.graphics();
-    bg.fillStyle(tc.bg, 1);
-    bg.fillRoundedRect(-this.CELL_SIZE/2, -this.CELL_SIZE/2, this.CELL_SIZE, this.CELL_SIZE, 10);
-    bg.fillStyle(0xffffff, 0.1);
-    bg.fillRoundedRect(-this.CELL_SIZE/2 + 3, -this.CELL_SIZE/2 + 3, this.CELL_SIZE - 6, this.CELL_SIZE * 0.36, {tl:8, tr:8, bl:0, br:0});
+    bg.fillStyle(tc.bottom, 1);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, rr);
+    const th = h * 0.52;
+    bg.fillStyle(tc.top, 1);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, th, { tl: rr, tr: rr, bl: 0, br: 0 });
+    bg.fillStyle(0xffffff, 0.12);
+    bg.fillRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, h * 0.28, { tl: Math.max(4, rr - 4), tr: Math.max(4, rr - 4), bl: 0, br: 0 });
+    if (tc.premium) {
+      bg.lineStyle(3, 0xfde047, 0.92);
+      bg.strokeRoundedRect(-w / 2, -h / 2, w, h, rr);
+    } else {
+      bg.lineStyle(1, edge, 0.4);
+      bg.strokeRoundedRect(-w / 2, -h / 2, w, h, rr);
+    }
 
-    const fontSize = val >= 1024 ? '32px' : val >= 128 ? '38px' : '48px';
+    const kids = [bg];
+    if (tc.sparkle) {
+      const gl = 10;
+      const a = 0.62;
+      const c1 = val >= 128 && val < 500 ? '#e0e7ff' : '#ffffff';
+      [ [-w/2+gl, -h/2+8], [w/2-gl-2, -h/2+8], [-w/2+6, h/2-14] ].forEach(([sx, sy], i) => {
+        const s = this.add.text(sx, sy, '✦', { fontSize: '11px', color: c1, fontStyle: '700' }).setOrigin(0, 0).setAlpha(i === 2 ? 0.4 : a);
+        kids.push(s);
+      });
+    }
+    if (val === 2048) {
+      const cr = this.add.text(-w/2+8, -h/2+6, '♔', { fontSize: '13px', color: '#fbbf24' }).setOrigin(0, 0).setAlpha(0.85);
+      kids.push(cr);
+    }
+
+    const fontSize = val >= 1024 ? '30px' : val >= 128 ? '36px' : '46px';
+    const lightNum = (tc.text === '#0a0a0a' || tc.text === '#042f2a');
     const txt = this.add.text(0, 0, `${val}`, {
       fontSize, fontFamily: Theme.fontUI,
       fontStyle: '800', color: tc.text,
-      stroke: '#00000033', strokeThickness: 2,
+      stroke: lightNum ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
+      strokeThickness: 2,
     }).setOrigin(0.5);
 
-    cont.add([bg, txt]);
+    kids.push(txt);
+    cont.add(kids);
 
     if(animate){
       cont.setScale(0);
@@ -1060,6 +1135,8 @@ class GameScene extends Phaser.Scene {
       fontStyle: '800',
     }).setOrigin(0.5);
 
+    this.tweens.add({ targets: movesLbl, alpha: 0.5, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
     this.depthMeter = new DepthMeter(this, GW / 2, 312, 620, 22);
     this.depthMeter.setProgress01(this._ascentProgress(), this);
 
@@ -1067,10 +1144,12 @@ class GameScene extends Phaser.Scene {
 
     this.scoreHud.setTarget(0, false);
 
+    this._hudRoot.setY(-24);
+    this._hudRoot.setAlpha(0);
     this.tweens.add({
       targets: this._hudRoot,
-      y: { from: -24, to: 0 },
-      alpha: { from: 0, to: 1 },
+      y: 0,
+      alpha: 1,
       duration: 520,
       ease: 'Cubic.easeOut',
     });
@@ -1275,7 +1354,7 @@ class GameScene extends Phaser.Scene {
     const overlay = this.add.rectangle(GW/2, GH/2, GW, GH, 0x020617, 0).setDepth(50).setInteractive();
     this.tweens.add({ targets: overlay, fillAlpha: 0.72, duration: 320 });
 
-    const panel = this.add.container(GW/2, GH/2).setDepth(51).setAlpha(0);
+    const panel = this.add.container(GW/2, GH/2 + 50).setDepth(51).setAlpha(0);
     const panelBg = this.add.graphics();
     panelBg.fillStyle(C.surface, 1);
     panelBg.fillRoundedRect(-260, -210, 520, 420, 22);
@@ -1330,7 +1409,7 @@ class GameScene extends Phaser.Scene {
     newBtn.setDepth(52);
 
     panel.add([panelBg, titleTxt, scoreTxt, movesTxt]);
-    this.tweens.add({ targets: panel, alpha: 1, y: { from: GH/2 + 50, to: GH/2 }, duration: 450, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: panel, alpha: 1, y: GH/2, duration: 450, ease: 'Back.easeOut' });
 
     this._spawnConfetti();
   }
@@ -1340,7 +1419,7 @@ class GameScene extends Phaser.Scene {
     const overlay = this.add.rectangle(GW/2, GH/2, GW, GH, 0x020617, 0).setDepth(50).setInteractive();
     this.tweens.add({ targets: overlay, fillAlpha: 0.72, duration: 320 });
 
-    const panel = this.add.container(GW/2, GH/2).setDepth(51).setAlpha(0);
+    const panel = this.add.container(GW/2, GH/2 + 50).setDepth(51).setAlpha(0);
     const panelBg = this.add.graphics();
     panelBg.fillStyle(C.surface, 1);
     panelBg.fillRoundedRect(-260, -190, 520, 380, 22);
@@ -1383,7 +1462,7 @@ class GameScene extends Phaser.Scene {
     retryBtn.setDepth(52);
 
     panel.add([panelBg, titleTxt, scoreTxt, movesTxt, bestNote]);
-    this.tweens.add({ targets: panel, alpha: 1, y: { from: GH/2 + 50, to: GH/2 }, duration: 450, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: panel, alpha: 1, y: GH/2, duration: 450, ease: 'Back.easeOut' });
   }
 
   _spawnConfetti(){
@@ -1417,7 +1496,8 @@ class UIScene extends Phaser.Scene {
   create(data){
     this.gameScene = data.gameScene || this.scene.get('Game');
 
-    const ACT_Y = 1040;
+    /* Bar center: must clear GameScene board (BOARD_Y + BOARD_SIZE ≈ 1000); was 1040 → bar top 964, overlapped grid. */
+    const ACT_Y = 1100;
     const btnSize = 64;
     const gap = 26;
     const totalW = btnSize * 3 + gap * 2;
@@ -1578,7 +1658,7 @@ const config = {
   width: GW,
   height: GH,
   parent: 'game-canvas-host',
-  backgroundColor: '#020617',
+  backgroundColor: '#004F60',
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -1591,6 +1671,38 @@ const config = {
 };
 
 window.game = new Phaser.Game(config);
+
+/**
+ * One listener (GameScene used to add another per run).
+ * Do NOT use loop.stop()/start() for tabs: start() is TimeStep.start(callback) — with no arg it sets
+ * this.callback=undefined, then next step() throws "this.callback is not a function" (phaser col ~80333).
+ * Use sleep/wake: they pause the RAF and keep the game step callback.
+ */
+function syncPhaserLoopToDocumentVisibility() {
+  const g = window.game;
+  if (!g?.loop) return;
+  const hint = document.getElementById('gp-tab-pause-hint');
+  if (hint) {
+    hint.classList.toggle('gp-tab-pause-hint--show', !!document.hidden);
+    if (document.hidden) hint.removeAttribute('hidden');
+    else hint.setAttribute('hidden', '');
+  }
+  const loop = g.loop;
+  try {
+    if (document.hidden) {
+      if (typeof loop.sleep === 'function') loop.sleep();
+    } else {
+      if (typeof loop.wake === 'function') loop.wake();
+      try {
+        const p = Sfx.ctx && Sfx.ctx.resume && Sfx.ctx.resume();
+        if (p && typeof p.then === 'function') p.catch(function () {});
+      } catch (e) {}
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+document.addEventListener('visibilitychange', syncPhaserLoopToDocumentVisibility);
 
 window.addEventListener('resize', () => {
   requestAnimationFrame(layoutDomStartButton);
@@ -1613,10 +1725,6 @@ const erosPlay = {
 window.addEventListener('message', e => {
   if(e.data?.type === 'erosplay_mute')   Sfx.muted = true;
   if(e.data?.type === 'erosplay_resume') Sfx.muted = !Save.data?.sound;
-});
-document.addEventListener('visibilitychange', () => {
-  if(!window.game) return;
-  document.hidden ? window.game.loop.stop() : window.game.loop.start();
 });
 erosPlay.init();
 </script>
